@@ -17,6 +17,38 @@ jobs:
         with:
           ref: fix/storage-unit-table-alignment
 
+      - name: Prepare pnpm configuration for Docker build
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workspace = Path("frontend/pnpm-workspace.yaml")
+          text = workspace.read_text(encoding="utf-8")
+
+          # pnpm 11 requires a non-empty packages field when this file is
+          # copied into the Docker build stage.
+          if not text.lstrip().startswith("packages:"):
+              text = "packages:\n  - '.'\n\n" + text
+              workspace.write_text(text, encoding="utf-8")
+
+          dockerfile = Path("core/Dockerfile")
+          docker = dockerfile.read_text(encoding="utf-8")
+          old = "COPY ./frontend/package.json ./frontend/pnpm-lock.yaml ./"
+          new = "COPY ./frontend/package.json ./frontend/pnpm-lock.yaml ./frontend/pnpm-workspace.yaml ./"
+
+          if old not in docker:
+              raise SystemExit("Expected COPY line was not found in core/Dockerfile")
+
+          dockerfile.write_text(docker.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          echo "Temporary Dockerfile change:"
+          grep -n "COPY ./frontend/package.json" core/Dockerfile
+
+          echo "Temporary pnpm workspace header:"
+          head -n 8 frontend/pnpm-workspace.yaml
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
